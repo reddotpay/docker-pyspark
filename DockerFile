@@ -1,0 +1,96 @@
+# FROM python:3.7-slim
+FROM python:3.7-slim-buster
+LABEL maintainer=" ken"
+
+# Default values can be overridden at build time
+# (ARGS are in lower case to distinguish them from ENV)
+ARG AIRFLOW_PIP_VERSION=20.2.4
+ARG spark_version="2.4.7"
+ARG hadoop_version="2.7"
+ARG spark_checksum="0F5455672045F6110B030CE343C049855B7BA86C0ECB5E39A075FF9D093C7F648DA55DED12E72FFE65D84C32DCD5418A6D764F2D6295A3F894A4286CC80EF478"
+
+ENV APACHE_SPARK_VERSION="${spark_version}"
+ENV HADOOP_VERSION="${hadoop_version}"
+ENV JAVA_HOME=/usr/java/jdk1.8.0_281
+
+WORKDIR /usr/local
+
+# Install the linux packages
+RUN apt-get update && apt-get install -y \
+    gcc \
+    openssl \
+    libssl-dev \
+    groff \
+    jq \
+    make \
+    zip \
+    unzip \
+    curl \
+    wget \
+    tar \
+    nano
+
+# Install the java-jdk 
+RUN mkdir -p /usr/java && \
+    wget --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" https://javadl.oracle.com/webapps/download/GetFile/1.8.0_281-b09/89d678f2be164786b292527658ca1605/linux-i586/jdk-8u281-linux-x64.tar.gz && \
+    tar -zxvf jdk-8u281-linux-x64.tar.gz && \
+    mv jdk1.8.0_281 ${JAVA_HOME}
+
+# Install the AWS CLI in the container
+RUN mkdir -p /aws/install && \
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
+    && unzip awscliv2.zip \
+    && ./aws/install
+
+RUN rm -rf \
+    awscliv2
+
+# Spark installation
+# Using the preferred mirror to download Spark
+# hadolint ignore=SC2046
+RUN wget -q $(wget -qO- https://www.apache.org/dyn/closer.lua/spark/spark-${APACHE_SPARK_VERSION}/spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz\?as_json | \
+    python -c "import sys, json; content=json.load(sys.stdin); print(content['preferred']+content['path_info'])") && \
+    echo "${spark_checksum} *spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz" | sha512sum -c - && \
+    tar xzf "spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz" -C /usr/local --owner root --group root --no-same-owner && \
+    rm "spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz"
+
+# # Configure Spark
+ENV SPARK_HOME=/usr/local/spark
+ENV SPARK_OPTS="--driver-java-options=-Xms1024M --driver-java-options=-Xmx4096M --driver-java-options=-Dlog4j.logLevel=info" \
+    PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.7-src.zip:$PYTHONPATH \
+    PATH=$SPARK_HOME/bin:$SPARK_HOME/python:$PATH
+
+RUN ln -s "spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}" spark
+
+# Download the necessary JDBC file in spark/jars
+RUN wget -O snowflake-jdbc-3.12.12.jar https://search.maven.org/classic/remotecontent?filepath=net/snowflake/snowflake-jdbc/3.12.12/snowflake-jdbc-3.12.12.jar && \
+    mv snowflake-jdbc-3.12.12.jar spark/jars/snowflake-jdbc-3.12.12.jar
+RUN wget -O spark-snowflake_2.11-2.8.2-spark_2.4.jar https://search.maven.org/classic/remotecontent?filepath=net/snowflake/spark-snowflake_2.11/2.8.2-spark_2.4/spark-snowflake_2.11-2.8.2-spark_2.4.jar && \
+    mv spark-snowflake_2.11-2.8.2-spark_2.4.jar spark/jars/spark-snowflake_2.11-2.8.2-spark_2.4.jar
+RUN wget -O mysql-connector-java-8.0.21.jar https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.21/mysql-connector-java-8.0.21.jar && \
+    mv mysql-connector-java-8.0.21.jar spark/jars/mysql-connector-java-8.0.21.jar
+RUN wget -O aws-java-sdk-1.7.4.jar https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk/1.7.4/aws-java-sdk-1.7.4.jar && \
+    mv aws-java-sdk-1.7.4.jar spark/jars/aws-java-sdk-1.7.4.jar
+RUN wget -O hadoop-aws-2.7.3.jar https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/2.7.3/hadoop-aws-2.7.3.jar && \
+    mv hadoop-aws-2.7.3.jar spark/jars/hadoop-aws-2.7.3.jar
+
+# Python commands to install the corresponding library
+RUN pip install --no-cache-dir --upgrade "pip==${AIRFLOW_PIP_VERSION}"
+RUN python -m pip install \
+    autopep8 \
+    virtualenv \
+    pylint \
+    coverage \
+    sphinx \
+    sphinx-rtd-theme \
+    boto3 \
+    s3pypi \
+    pandas==0.23.4 \
+    snowflake-connector-python \
+    google-api-python-client \
+    google-auth-httplib2 \
+    google-auth-oauthlib
+
+COPY ["switchRole.sh", "getParamStore.sh", "/var/"]
+
+CMD ["/bin/sh"]
