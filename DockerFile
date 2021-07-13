@@ -5,9 +5,8 @@ LABEL maintainer=" ken"
 # Default values can be overridden at build time
 # (ARGS are in lower case to distinguish them from ENV)
 ARG AIRFLOW_PIP_VERSION=20.2.4
-ARG spark_version="2.4.7"
-ARG hadoop_version="2.7"
-ARG spark_checksum="0F5455672045F6110B030CE343C049855B7BA86C0ECB5E39A075FF9D093C7F648DA55DED12E72FFE65D84C32DCD5418A6D764F2D6295A3F894A4286CC80EF478"
+ARG spark_version="3.1.2"
+ARG hadoop_version="3.2"
 
 ENV APACHE_SPARK_VERSION="${spark_version}"
 ENV HADOOP_VERSION="${hadoop_version}"
@@ -50,7 +49,6 @@ RUN rm -rf \
 # hadolint ignore=SC2046
 RUN wget -q $(wget -qO- https://www.apache.org/dyn/closer.lua/spark/spark-${APACHE_SPARK_VERSION}/spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz\?as_json | \
     python -c "import sys, json; content=json.load(sys.stdin); print(content['preferred']+content['path_info'])") && \
-    echo "${spark_checksum} *spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz" | sha512sum -c - && \
     tar xzf "spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz" -C /usr/local --owner root --group root --no-same-owner && \
     rm "spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz"
 
@@ -63,16 +61,18 @@ ENV SPARK_OPTS="--driver-java-options=-Xms1024M --driver-java-options=-Xmx4096M 
 RUN ln -s "spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}" spark
 
 # Download the necessary JDBC file in spark/jars
-RUN wget -O snowflake-jdbc-3.12.12.jar https://search.maven.org/classic/remotecontent?filepath=net/snowflake/snowflake-jdbc/3.12.12/snowflake-jdbc-3.12.12.jar && \
-    mv snowflake-jdbc-3.12.12.jar spark/jars/snowflake-jdbc-3.12.12.jar
-RUN wget -O spark-snowflake_2.11-2.8.2-spark_2.4.jar https://search.maven.org/classic/remotecontent?filepath=net/snowflake/spark-snowflake_2.11/2.8.2-spark_2.4/spark-snowflake_2.11-2.8.2-spark_2.4.jar && \
-    mv spark-snowflake_2.11-2.8.2-spark_2.4.jar spark/jars/spark-snowflake_2.11-2.8.2-spark_2.4.jar
-RUN wget -O mysql-connector-java-8.0.21.jar https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.21/mysql-connector-java-8.0.21.jar && \
-    mv mysql-connector-java-8.0.21.jar spark/jars/mysql-connector-java-8.0.21.jar
-RUN wget -O aws-java-sdk-1.7.4.jar https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk/1.7.4/aws-java-sdk-1.7.4.jar && \
-    mv aws-java-sdk-1.7.4.jar spark/jars/aws-java-sdk-1.7.4.jar
-RUN wget -O hadoop-aws-2.7.3.jar https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/2.7.3/hadoop-aws-2.7.3.jar && \
-    mv hadoop-aws-2.7.3.jar spark/jars/hadoop-aws-2.7.3.jar
+RUN wget -O snowflake-jdbc-3.13.5.jar https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.13.5/snowflake-jdbc-3.13.5.jar && \
+    mv snowflake-jdbc-3.13.5.jar spark/jars/snowflake-jdbc-3.13.5.jar
+RUN wget -O spark-snowflake_2.12-2.9.0-spark_3.1.jar https://repo1.maven.org/maven2/net/snowflake/spark-snowflake_2.12/2.9.0-spark_3.1/spark-snowflake_2.12-2.9.0-spark_3.1.jar && \
+    mv spark-snowflake_2.12-2.9.0-spark_3.1.jar spark/jars/spark-snowflake_2.12-2.9.0-spark_3.1.jar
+RUN wget -O mysql-connector-java-8.0.25.jar https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.25/mysql-connector-java-8.0.25.jar && \
+    mv mysql-connector-java-8.0.25.jar spark/jars/mysql-connector-java-8.0.25.jar
+RUN wget -O aws-java-sdk-1.12.22.jar https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk/1.12.22/aws-java-sdk-1.12.22.jar && \
+    mv aws-java-sdk-1.12.22.jar spark/jars/aws-java-sdk-1.12.22.jar
+RUN wget -O hadoop-aws-3.2.0.jar https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.2.0/hadoop-aws-3.2.0.jar && \
+    mv hadoop-aws-3.2.0.jar spark/jars/hadoop-aws-3.2.0.jar
+RUN wget -O aws-java-sdk-bundle-1.11.874.jar https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.11.874/aws-java-sdk-bundle-1.11.874.jar && \
+    mv aws-java-sdk-bundle-1.11.874.jar spark/jars/aws-java-sdk-bundle-1.11.874.jar
 
 # Python commands to install the corresponding library
 RUN pip install --no-cache-dir --upgrade "pip==${AIRFLOW_PIP_VERSION}"
@@ -89,7 +89,8 @@ RUN python -m pip install \
     snowflake-connector-python \
     google-api-python-client \
     google-auth-httplib2 \
-    google-auth-oauthlib
+    google-auth-oauthlib \
+    py4j
 
 COPY ["switchRole.sh", "getParamStore.sh", "/var/"]
 
